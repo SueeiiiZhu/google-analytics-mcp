@@ -62,6 +62,12 @@ Setup involves the following steps:
 
 [Install pipx](https://pipx.pypa.io/stable/#install-pipx).
 
+The repository now provides two server entry points:
+
+- `analytics-mcp` for the existing `stdio` transport used by local MCP clients.
+- `analytics-mcp-http` for `streamable_http`, useful when you want to expose
+  the server on a host and port for other machines on your LAN.
+
 ### Enable APIs in your project ✅
 
 [Follow the instructions](https://support.google.com/googleapi/answer/6158841)
@@ -127,7 +133,7 @@ Credentials saved to file: [PATH_TO_CREDENTIALS_JSON]
     Replace `PATH_TO_CREDENTIALS_JSON` with the path you copied in the previous
     step.
 
-    We also recommend that you add a `GOOGLE_CLOUD_PROJECT` attribute to the
+    We also recommend that you add a `GOOGLE_PROJECT_ID` attribute to the
     `env` object. Replace `YOUR_PROJECT_ID` in the following example with the
     [project ID](https://support.google.com/googleapi/answer/7014113) of your
     Google Cloud project.
@@ -149,6 +155,59 @@ Credentials saved to file: [PATH_TO_CREDENTIALS_JSON]
       }
     }
     ```
+
+### Troubleshooting installation
+
+If you see an error like the following:
+
+```python
+ImportError: cannot import name 'admin_v1beta' from 'google.analytics'
+```
+
+your Python environment is missing the `google-analytics-admin` package, or
+the repo dependencies were not installed into the interpreter you are using.
+
+To fix it, install the project dependencies with the same Python interpreter
+you will use to run the server:
+
+```shell
+/Users/shiwen/.pyenv/versions/codex/bin/python -m pip install -e ".[dev]"
+```
+
+Then verify the import:
+
+```shell
+/Users/shiwen/.pyenv/versions/codex/bin/python -c "from google.analytics import admin_v1beta; print(admin_v1beta)"
+```
+
+This project is tested in CI on Python 3.10 through 3.13. If you are using
+Python 3.14+, switch to a supported version first when troubleshooting
+dependency import failures.
+
+### Run streamable HTTP
+
+To run a networked MCP endpoint instead of the default `stdio` process, set
+the HTTP settings in your environment and start the dedicated HTTP entry point:
+
+```shell
+export SERVER_HOST=0.0.0.0
+export SERVER_PORT=8000
+export SERVER_PATH=/mcp
+/Users/shiwen/.pyenv/versions/codex/bin/python -m analytics_mcp.server_streamable_http
+```
+
+You can also use the installed script:
+
+```shell
+analytics-mcp-http
+```
+
+The HTTP entry point also reads a local `.env` file from the repository root,
+so `SERVER_HOST`, `SERVER_PORT`, and `SERVER_PATH` can be configured there
+without exporting them in your shell.
+
+If your machine's LAN IP is `192.168.1.100`, the MCP endpoint will be
+available at `http://192.168.1.100:8000/mcp`.
 
 ## Try it out 🥼
 
