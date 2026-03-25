@@ -90,12 +90,14 @@ async def list_tools() -> list[mcp_types.Tool]:
 
 
 @app.call_tool()
-async def call_mcp_tool(name: str, arguments: dict) -> list[mcp_types.Content]:
+async def call_mcp_tool(
+    name: str, arguments: dict | None = None
+) -> list[mcp_types.Content]:
     if name in tool_map:
         tool = tool_map[name]
         try:
             adk_tool_response = await tool.run_async(
-                args=arguments,
+                args=arguments or {},
                 tool_context=None,
             )
             # Serialize the ADK tool response to JSON for MCP response

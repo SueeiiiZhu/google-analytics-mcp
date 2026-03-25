@@ -77,6 +77,16 @@ def load_dotenv_file(env_file: str | Path = DEFAULT_ENV_FILE) -> dict[str, str]:
     return values
 
 
+def apply_dotenv_environment(
+    env_file: str | Path = DEFAULT_ENV_FILE,
+) -> dict[str, str]:
+    """Loads dotenv values into os.environ without overriding explicit env."""
+    dotenv_values = load_dotenv_file(env_file)
+    for key, value in dotenv_values.items():
+        os.environ.setdefault(key, value)
+    return dotenv_values
+
+
 def load_server_config(
     env: Mapping[str, str] | None = None,
     env_file: str | Path = DEFAULT_ENV_FILE,
@@ -147,7 +157,12 @@ async def _healthcheck(_request):
 
 def create_streamable_http_app(config: ServerConfig) -> Starlette:
     """Creates the ASGI app for streamable HTTP transport."""
-    transport = StreamableHTTPServerTransport(mcp_session_id=None)
+    # Prefer JSON responses for request/response compatibility with hosts
+    # that do not fully consume SSE tool results.
+    transport = StreamableHTTPServerTransport(
+        mcp_session_id=None,
+        is_json_response_enabled=True,
+    )
     handler = StreamableHTTPHandler(transport)
 
     @asynccontextmanager
@@ -175,6 +190,7 @@ def create_streamable_http_app(config: ServerConfig) -> Starlette:
 
 async def run_server_async(config: ServerConfig | None = None):
     """Runs the MCP server over streamable HTTP."""
+    apply_dotenv_environment()
     config = load_server_config() if config is None else config
     app = create_streamable_http_app(config)
     print(

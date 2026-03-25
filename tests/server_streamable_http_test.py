@@ -14,12 +14,16 @@
 
 """Test cases for the streamable HTTP server entry point."""
 
+import json
+import os
 from pathlib import Path
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
+from analytics_mcp import coordinator
 from analytics_mcp import server_streamable_http
+from mcp.client.streamable_http import MCP_PROTOCOL_VERSION
 from starlette.applications import Starlette
 from starlette.responses import PlainTextResponse
 from starlette.routing import Mount
@@ -103,6 +107,42 @@ class TestServerConfig(unittest.TestCase):
         self.assertEqual(config.port, 9200)
         self.assertEqual(config.path, "/from-env")
 
+    def test_apply_dotenv_environment_sets_missing_values(self):
+        """Dotenv values should populate missing process environment keys."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            dotenv_path = Path(tmpdir) / ".env"
+            dotenv_path.write_text(
+                "GOOGLE_APPLICATION_CREDENTIALS=/tmp/adc.json\n",
+                encoding="utf-8",
+            )
+
+            with patch.dict("os.environ", {}, clear=True):
+                server_streamable_http.apply_dotenv_environment(dotenv_path)
+                self.assertEqual(
+                    os.environ["GOOGLE_APPLICATION_CREDENTIALS"],
+                    "/tmp/adc.json",
+                )
+
+    def test_apply_dotenv_environment_does_not_override_existing_env(self):
+        """Explicit environment variables should take precedence over .env."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            dotenv_path = Path(tmpdir) / ".env"
+            dotenv_path.write_text(
+                "GOOGLE_APPLICATION_CREDENTIALS=/tmp/from-dotenv.json\n",
+                encoding="utf-8",
+            )
+
+            with patch.dict(
+                "os.environ",
+                {"GOOGLE_APPLICATION_CREDENTIALS": "/tmp/from-env.json"},
+                clear=True,
+            ):
+                server_streamable_http.apply_dotenv_environment(dotenv_path)
+                self.assertEqual(
+                    os.environ["GOOGLE_APPLICATION_CREDENTIALS"],
+                    "/tmp/from-env.json",
+                )
+
 
 class TestStreamableHTTPApp(unittest.TestCase):
     """Tests HTTP app construction."""
@@ -136,6 +176,101 @@ class TestStreamableHTTPApp(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIsNone(response.headers.get("location"))
         self.assertEqual(response.text, "ok")
+
+    def test_initialize_returns_json_response(self):
+        """Initialize should return a direct JSON-RPC response."""
+        config = server_streamable_http.load_server_config({})
+        app = server_streamable_http.create_streamable_http_app(config)
+        request = {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {
+                "protocolVersion": "2025-11-25",
+                "capabilities": {},
+                "clientInfo": {
+                    "name": "test-client",
+                    "version": "1.0.0",
+                },
+            },
+        }
+
+        with TestClient(app) as client:
+            response = client.post(
+                "/mcp",
+                json=request,
+                headers={
+                    "Accept": "application/json, text/event-stream",
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers["content-type"], "application/json")
+        payload = response.json()
+        self.assertEqual(payload["jsonrpc"], "2.0")
+        self.assertEqual(payload["id"], 1)
+        self.assertEqual(
+            payload["result"]["serverInfo"]["name"],
+            "Google Analytics MCP Server",
+        )
+
+    def test_call_tool_without_arguments_returns_json_response(self):
+        """Tool calls should accept omitted arguments and return JSON."""
+        config = server_streamable_http.load_server_config({})
+        app = server_streamable_http.create_streamable_http_app(config)
+        initialize_request = {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {
+                "protocolVersion": "2025-11-25",
+                "capabilities": {},
+                "clientInfo": {
+                    "name": "test-client",
+                    "version": "1.0.0",
+                },
+            },
+        }
+        call_request = {
+            "jsonrpc": "2.0",
+            "id": 2,
+            "method": "tools/call",
+            "params": {"name": "get_account_summaries"},
+        }
+
+        with (
+            TestClient(app) as client,
+            patch.object(
+                coordinator.tool_map["get_account_summaries"],
+                "run_async",
+                new=AsyncMock(return_value={"ok": True}),
+            ),
+        ):
+            client.post(
+                "/mcp",
+                json=initialize_request,
+                headers={
+                    "Accept": "application/json, text/event-stream",
+                },
+            )
+            response = client.post(
+                "/mcp",
+                json=call_request,
+                headers={
+                    "Accept": "application/json, text/event-stream",
+                    MCP_PROTOCOL_VERSION: "2025-11-25",
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers["content-type"], "application/json")
+        payload = response.json()
+        self.assertEqual(payload["jsonrpc"], "2.0")
+        self.assertEqual(payload["id"], 2)
+        self.assertFalse(payload["result"]["isError"])
+        content = payload["result"]["content"]
+        self.assertEqual(len(content), 1)
+        self.assertEqual(json.loads(content[0]["text"]), {"ok": True})
 
 
 class TestRunServer(unittest.TestCase):
