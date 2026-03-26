@@ -25,6 +25,30 @@ from analytics_mcp.tools.utils import (
 from google.analytics import data_v1beta
 
 
+def normalize_named_string_list(
+    values: List[str | Dict[str, Any]],
+    field_name: str,
+) -> List[str]:
+    """Normalizes a list of strings or {name: string} objects."""
+    normalized: List[str] = []
+
+    for value in values:
+        if isinstance(value, str):
+            normalized.append(value)
+            continue
+
+        if isinstance(value, dict) and isinstance(value.get("name"), str):
+            normalized.append(value["name"])
+            continue
+
+        raise ValueError(
+            f"{field_name} items must be strings or objects with a string "
+            "'name' field"
+        )
+
+    return normalized
+
+
 def get_date_ranges_hints():
     range_jan = data_v1beta.DateRange(
         start_date="2025-01-01", end_date="2025-01-31", name="Jan2025"

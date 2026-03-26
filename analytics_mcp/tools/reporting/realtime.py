@@ -26,6 +26,7 @@ from analytics_mcp.tools.reporting.metadata import (
     get_dimension_filter_hints,
     get_metric_filter_hints,
     get_order_bys_hints,
+    normalize_named_string_list,
 )
 from google.analytics import data_v1beta
 
@@ -78,8 +79,8 @@ def _run_realtime_report_description() -> str:
 
 async def run_realtime_report(
     property_id: int | str,
-    dimensions: List[str],
-    metrics: List[str],
+    dimensions: List[str | Dict[str, Any]],
+    metrics: List[str | Dict[str, Any]],
     dimension_filter: Dict[str, Any] = None,
     metric_filter: Dict[str, Any] = None,
     order_bys: List[Dict[str, Any]] = None,
@@ -130,12 +131,20 @@ async def run_realtime_report(
           https://developers.google.com/analytics/devguides/reporting/data/v1/basics#pagination.
         return_property_quota: Whether to return realtime property quota in the response.
     """
+    normalized_dimensions = normalize_named_string_list(
+        dimensions, "dimensions"
+    )
+    normalized_metrics = normalize_named_string_list(metrics, "metrics")
+
     request = data_v1beta.RunRealtimeReportRequest(
         property=construct_property_rn(property_id),
         dimensions=[
-            data_v1beta.Dimension(name=dimension) for dimension in dimensions
+            data_v1beta.Dimension(name=dimension)
+            for dimension in normalized_dimensions
         ],
-        metrics=[data_v1beta.Metric(name=metric) for metric in metrics],
+        metrics=[
+            data_v1beta.Metric(name=metric) for metric in normalized_metrics
+        ],
         return_property_quota=return_property_quota,
     )
 

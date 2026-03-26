@@ -21,6 +21,7 @@ from analytics_mcp.tools.reporting.metadata import (
     get_dimension_filter_hints,
     get_metric_filter_hints,
     get_order_bys_hints,
+    normalize_named_string_list,
 )
 from analytics_mcp.tools.utils import (
     construct_property_rn,
@@ -81,8 +82,8 @@ def _run_report_description() -> str:
 async def run_report(
     property_id: int | str,
     date_ranges: List[Dict[str, Any]],
-    dimensions: List[str],
-    metrics: List[str],
+    dimensions: List[str | Dict[str, Any]],
+    metrics: List[str | Dict[str, Any]],
     dimension_filter: Dict[str, Any] = None,
     metric_filter: Dict[str, Any] = None,
     order_bys: List[Dict[str, Any]] = None,
@@ -137,12 +138,20 @@ async def run_report(
           report uses the property's default currency.
         return_property_quota: Whether to return property quota in the response.
     """
+    normalized_dimensions = normalize_named_string_list(
+        dimensions, "dimensions"
+    )
+    normalized_metrics = normalize_named_string_list(metrics, "metrics")
+
     request = data_v1beta.RunReportRequest(
         property=construct_property_rn(property_id),
         dimensions=[
-            data_v1beta.Dimension(name=dimension) for dimension in dimensions
+            data_v1beta.Dimension(name=dimension)
+            for dimension in normalized_dimensions
         ],
-        metrics=[data_v1beta.Metric(name=metric) for metric in metrics],
+        metrics=[
+            data_v1beta.Metric(name=metric) for metric in normalized_metrics
+        ],
         date_ranges=[data_v1beta.DateRange(dr) for dr in date_ranges],
         return_property_quota=return_property_quota,
     )

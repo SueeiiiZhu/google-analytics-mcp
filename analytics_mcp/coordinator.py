@@ -71,6 +71,23 @@ app = Server(
 )
 
 mcp_tools = [adk_to_mcp_tool_type(tool) for tool in tools]
+
+
+def _named_string_item_schema() -> dict:
+    """Returns schema for a string or {name: string} object item."""
+    return {
+        "anyOf": [
+            {"type": "string"},
+            {
+                "type": "object",
+                "properties": {"name": {"type": "string"}},
+                "required": ["name"],
+                "additionalProperties": True,
+            },
+        ]
+    }
+
+
 # Update the inputSchema for tools that do not have parameters.
 # TODO: This is a bug in the ADK and can be removed once it is fixed.
 # https://github.com/google/adk-python/issues/948
@@ -82,6 +99,13 @@ for tool in mcp_tools:
     for prop in tool.inputSchema.get("properties", {}).values():
         if "anyOf" in prop and prop.get("type") == "null":
             del prop["type"]
+
+    if tool.name in {"run_report", "run_realtime_report"}:
+        properties = tool.inputSchema.get("properties", {})
+        if "dimensions" in properties:
+            properties["dimensions"]["items"] = _named_string_item_schema()
+        if "metrics" in properties:
+            properties["metrics"]["items"] = _named_string_item_schema()
 
 
 @app.list_tools()

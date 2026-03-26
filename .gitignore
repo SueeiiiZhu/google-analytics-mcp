@@ -51,6 +51,8 @@ docs.metadata
 env/
 venv/
 .venv/
+.env/
+.env
 
 # pyenv
 .python-version
@@ -65,4 +67,3 @@ system_tests/local_test_setup
 # Make sure a generated file isn't accidentally committed.
 pylintrc
 pylintrc.test
-
