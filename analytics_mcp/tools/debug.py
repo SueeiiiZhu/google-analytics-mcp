@@ -1,9 +1,9 @@
 """Debug utilities for verifying network configuration."""
 
-import inspect
 import os
 import httpx
-from analytics_mcp.tools.utils import create_admin_api_client
+import google.auth
+import google.auth.transport.requests
 
 
 async def check_proxy_ip() -> dict:
@@ -39,29 +39,39 @@ async def check_proxy_ip() -> dict:
 async def check_ga_connectivity() -> dict:
     """Verify connectivity to Google Analytics API.
 
-    Makes a lightweight GA Admin API call (list accounts) to confirm that
-    requests can reach Google's servers. Since the client uses REST transport,
-    the same HTTPS_PROXY used by check_proxy_ip applies here too — so if
-    check_proxy_ip shows the correct proxy IP, this call goes through the
-    same path.
+    Obtains an access token via Application Default Credentials, then makes
+    a lightweight REST call to the GA Admin API. Uses the same HTTPS_PROXY
+    as check_proxy_ip, so a successful response confirms both proxy routing
+    and credential validity.
     """
     try:
-        client = create_admin_api_client()
-        result = client.list_account_summaries()
-        pager = await result if inspect.isawaitable(result) else result
-        accounts = []
-        if hasattr(pager, '__aiter__'):
-            async for summary in pager:
-                accounts.append(summary.account)
-                break
+        creds, _ = google.auth.default(
+            scopes=["https://www.googleapis.com/auth/analytics.readonly"]
+        )
+        auth_req = google.auth.transport.requests.Request()
+        creds.refresh(auth_req)
+        token = creds.token
+
+        url = "https://analyticsadmin.googleapis.com/v1beta/accountSummaries?pageSize=1"
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                url,
+                headers={"Authorization": f"Bearer {token}"},
+                timeout=10,
+            )
+        if response.status_code == 200:
+            data = response.json()
+            summaries = data.get("accountSummaries", [])
+            return {
+                "connected": True,
+                "accounts_found": len(summaries),
+                "sample": [s.get("account") for s in summaries],
+            }
         else:
-            for summary in (pager.account_summaries or [])[:1]:
-                accounts.append(summary.account)
-        return {
-            "connected": True,
-            "accounts_found": len(accounts),
-            "sample": accounts,
-        }
+            return {
+                "connected": False,
+                "error": f"HTTP {response.status_code}: {response.text[:200]}",
+            }
     except Exception as e:
         return {
             "connected": False,
