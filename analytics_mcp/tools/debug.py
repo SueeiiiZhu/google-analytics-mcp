@@ -1,5 +1,6 @@
 """Debug utilities for verifying network configuration."""
 
+import inspect
 import os
 import httpx
 from analytics_mcp.tools.utils import create_admin_api_client
@@ -46,11 +47,16 @@ async def check_ga_connectivity() -> dict:
     """
     try:
         client = create_admin_api_client()
-        pager = await client.list_account_summaries()
+        result = client.list_account_summaries()
+        pager = await result if inspect.isawaitable(result) else result
         accounts = []
-        async for summary in pager:
-            accounts.append(summary.account)
-            break
+        if hasattr(pager, '__aiter__'):
+            async for summary in pager:
+                accounts.append(summary.account)
+                break
+        else:
+            for summary in (pager.account_summaries or [])[:1]:
+                accounts.append(summary.account)
         return {
             "connected": True,
             "accounts_found": len(accounts),
