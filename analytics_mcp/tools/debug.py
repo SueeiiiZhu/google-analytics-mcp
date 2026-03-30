@@ -46,10 +46,10 @@ async def check_ga_connectivity() -> dict:
     """
     try:
         client = create_admin_api_client()
-        pager = await client.list_accounts(request={"page_size": 1})
+        pager = await client.list_account_summaries()
         accounts = []
-        async for account in pager:
-            accounts.append(account.name)
+        async for summary in pager:
+            accounts.append(summary.account)
             break
         return {
             "connected": True,
